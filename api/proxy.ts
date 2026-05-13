@@ -55,17 +55,17 @@ app.post("/api/gemini", async (req, res) => {
       return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server." });
     }
 
-    const geminiModel = (genAI as any).getGenerativeModel({ model });
-    
-    const result = await geminiModel.generateContent({
+    // Use ai.models.generateContent as per the @google/genai SDK pattern
+    const result = await (genAI as any).models.generateContent({
+      model,
       contents,
-      generationConfig: config
+      config
     });
 
-    res.json(result.response);
+    res.json(result);
   } catch (error: any) {
     console.error("Gemini API error:", error);
-    res.status(500).json({ error: error instanceof Error ? error.message : "AI generation failed" });
+    res.status(500).json({ error: error instanceof Error ? `[Proxy Debug] ${error.message}` : "AI generation failed" });
   }
 });
 

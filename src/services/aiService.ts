@@ -11,14 +11,17 @@ async function callGeminiProxy(payload: any) {
 
   if (!response.ok) {
     const errorData = await response.json();
+    console.error("Gemini Proxy Error Details:", errorData);
     throw new Error(errorData.error || "AI generation failed");
   }
 
-  return response.json();
+  const result = await response.json();
+  console.log("Gemini Proxy Success Result:", result);
+  return result;
 }
 
 export async function analyzeProductImage(base64Image: string) {
-  const model = "gemini-1.5-flash"; // Standardized to a stable model name if needed, or keep as requested
+  const model = "gemini-3-flash-preview"; 
   
   const payload = {
     model,
@@ -64,7 +67,7 @@ export async function generateEcommerceImage(
   extraContext?: string | null,
   extraPrompts?: string[]
 ) {
-  const model = "gemini-1.5-flash"; // Standardized
+  const model = "gemini-3.1-flash-image-preview";
   
   let stylePrompt = "";
   const saasContext = extraContext ? `Context from SaaS: ${extraContext}. ` : "";
