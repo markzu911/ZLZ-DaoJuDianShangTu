@@ -37,8 +37,11 @@ export interface ConsumeResponse {
   message?: string;
 }
 
-export interface UploadResponse {
+export interface SaveResultResponse {
   success: boolean;
+  source: string;
+  savedToRecords: boolean;
+  recordId?: string;
   url?: string;
   message?: string;
 }
@@ -73,11 +76,15 @@ class SaasService {
     return this.fetchApi("/api/tool/consume", { userId, toolId });
   }
 
-  async uploadImage(base64: string, userId: string): Promise<UploadResponse> {
-    // Note: The spec says images are saved to UserImage table when source="result"
-    return this.fetchApi("/api/upload/image", {
-      base64,
-      userId,
+  async saveResult(params: {
+    userId: string;
+    toolId: string;
+    base64s?: string[];
+    imageUrls?: string[];
+    idempotencyKey?: string;
+  }): Promise<SaveResultResponse> {
+    return this.fetchApi("/api/upload/save-result", {
+      ...params,
       source: "result"
     });
   }

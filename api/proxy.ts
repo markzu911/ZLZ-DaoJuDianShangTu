@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-app.use(express.json({ limit: '20mb' }));
+app.use(express.json({ limit: '2mb' }));
 
 // CORS and Privacy Headers
 app.use((req, res, next) => {
@@ -44,7 +44,7 @@ const proxyRequest = async (req: express.Request, res: express.Response, targetP
 app.post("/api/tool/launch", (req, res) => proxyRequest(req, res, "/api/tool/launch"));
 app.post("/api/tool/verify", (req, res) => proxyRequest(req, res, "/api/tool/verify"));
 app.post("/api/tool/consume", (req, res) => proxyRequest(req, res, "/api/tool/consume"));
-app.post("/api/upload/image", (req, res) => proxyRequest(req, res, "/api/upload/image"));
+app.post("/api/upload/save-result", (req, res) => proxyRequest(req, res, "/api/upload/save-result"));
 
 // Gemini API route
 app.post("/api/gemini", async (req, res) => {

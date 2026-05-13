@@ -97,8 +97,9 @@ export default function App() {
     const handleMessage = async (event: MessageEvent) => {
       const data = event.data;
       if (data.type === 'SAAS_INIT') {
-        const uId = data.userId === "null" || data.userId === "undefined" ? null : data.userId;
-        const tId = data.toolId === "null" || data.toolId === "undefined" ? null : data.toolId;
+        const filterId = (id: any) => id === "null" || id === "undefined" || !id ? null : id;
+        const uId = filterId(data.userId);
+        const tId = filterId(data.toolId);
         
         setUserId(uId);
         setToolId(tId);
@@ -195,6 +196,11 @@ export default function App() {
     setLoading(true);
     setLoadingText("正在检查积分状态...");
 
+    // Generate a unique request ID for idempotency as per V4 spec
+    const requestId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' 
+      ? crypto.randomUUID() 
+      : `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
     // SaaS Verify
     if (userId && toolId) {
       try {
@@ -206,7 +212,6 @@ export default function App() {
         }
       } catch (error) {
         console.error("Verify failed", error);
-        // Fail open or fail closed? Usually fail closed for credits.
         alert("网络异常，无法验证积分");
         setLoading(false);
         return;
@@ -239,19 +244,25 @@ export default function App() {
             if (consumeRes.data) {
               setUserData(prev => prev ? { ...prev, integral: consumeRes.data!.currentIntegral } : null);
             }
-            // Upload to OSS for UserImage table
-            await saasService.uploadImage(fImg, userId);
-            
-            // Notify parent if needed (optional since we did direct consume)
-            window.parent.postMessage({
-              type: 'SAAS_CONSUME_RESULT',
+            // Upload to OSS for UserImage table using the new saveResult spec
+            await saasService.saveResult({
               userId,
               toolId,
+              base64s: [fImg],
+              idempotencyKey: requestId
+            });
+            
+            // Notify parent as per V4 spec (optional since we did direct consume, but recommended)
+            window.parent.postMessage({
+              type: 'SAAS_CONSUME',
+              userId,
+              toolId,
+              requestId,
               success: true
             }, '*');
           }
         } catch (error) {
-          console.error("Consume/Upload failed", error);
+          console.error("Consume/SaveResult failed", error);
         }
       }
       
