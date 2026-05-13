@@ -134,10 +134,35 @@ export default function App() {
     if (file) {
       const reader = new FileReader();
       reader.onload = (event) => {
-        setOriginalImage(event.target?.result as string);
-        setStep("UPLOAD");
-        // Auto switch focus to settings if image uploaded
-        setActiveMainTab("SETTINGS");
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const maxSide = 1600;
+
+          if (width > maxSide || height > maxSide) {
+            if (width > height) {
+              height = Math.round((height * maxSide) / width);
+              width = maxSide;
+            } else {
+              width = Math.round((width * maxSide) / height);
+              height = maxSide;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85);
+            setOriginalImage(compressedBase64);
+            setStep("UPLOAD");
+            setActiveMainTab("SETTINGS");
+          }
+        };
+        img.src = event.target?.result as string;
       };
       reader.readAsDataURL(file);
     }
@@ -335,7 +360,7 @@ export default function App() {
                     </div>
                     <div className="text-center">
                       <p className="text-xs font-medium text-zinc-500">点击上传刀具图片</p>
-                      <p className="text-[10px] text-zinc-300 mt-1">支持 JPG, PNG</p>
+                      <p className="text-[10px] text-zinc-300 mt-1">支持常见图片格式（如 JPG, PNG, WebP），最大支持 20MB（通过前端压缩上传）</p>
                     </div>
                   </>
                 ) : (
