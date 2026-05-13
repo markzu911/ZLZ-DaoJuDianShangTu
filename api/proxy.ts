@@ -2,11 +2,12 @@ import express from "express";
 import axios from "axios";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import sharp from "sharp";
 
 dotenv.config();
 
 const app = express();
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '20mb' }));
 
 // CORS and Privacy Headers
 app.use((req, res, next) => {
@@ -46,7 +47,139 @@ app.post("/api/tool/verify", (req, res) => proxyRequest(req, res, "/api/tool/ver
 app.post("/api/tool/consume", (req, res) => proxyRequest(req, res, "/api/tool/consume"));
 app.post("/api/upload/save-result", (req, res) => proxyRequest(req, res, "/api/upload/save-result"));
 
-// Gemini API route
+// Dedicated Generation Endpoint (V4 3-Step BEST PRACTICE: Tool Backend Handles Integration)
+app.post("/api/generate-knife", async (req, res) => {
+  const { 
+    userId, 
+    toolId, 
+    title, 
+    description, 
+    originalImage, 
+    stylePrompt, 
+    aspectRatio, 
+    resolution,
+    idempotencyKey 
+  } = req.body;
+
+  try {
+    // 1. Verify integral via SaaS
+    const verifyRes = await axios.post("http://aibigtree.com/api/tool/verify", { userId, toolId });
+    if (!verifyRes.data.success) {
+      return res.status(403).json(verifyRes.data);
+    }
+
+    // 2. Generate Image via Gemini
+    const geminiResponse = await (genAI as any).models.generateContent({
+      model: "gemini-3.1-flash-image-preview",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: "image/jpeg", data: originalImage.split(",")[1] || originalImage } },
+            { text: stylePrompt }
+          ]
+        }
+      ],
+      config: {
+        imageConfig: { aspectRatio, imageSize: resolution }
+      }
+    });
+
+    let base64Image = "";
+    for (const part of geminiResponse.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData) {
+        base64Image = part.inlineData.data;
+        break;
+      }
+    }
+
+    if (!base64Image) {
+      throw new Error("AI did not return image data");
+    }
+
+    // 3. Process image server-side (Add Text Overlay)
+    const imageBuffer = Buffer.from(base64Image, 'base64');
+    const metadata = await sharp(imageBuffer).metadata();
+    const width = metadata.width || 1024;
+    const height = metadata.height || 1024;
+
+    const titleFontSize = Math.floor(width * 0.065);
+    const descFontSize = Math.floor(width * 0.028);
+    const padding = width * 0.05;
+
+    // Split text into lines
+    const titleLines = title.split("\n").map((l: string) => l.trim()).filter((l: string) => l !== "");
+    const descLines = description.split("\n").map((l: string) => l.trim()).filter((l: string) => l !== "");
+
+    // Create SVG overlay
+    let svgOverlay = `<svg width="${width}" height="${height}">
+      <defs>
+        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="3" />
+          <feOffset dx="2" dy="2" result="offsetblur" />
+          <feComponentTransfer>
+            <feFuncA type="linear" slope="0.5" />
+          </feComponentTransfer>
+          <feMerge>
+            <feMergeNode />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      <style>
+        .title { fill: white; font-family: sans-serif; font-weight: bold; font-size: ${titleFontSize}px; filter: url(#shadow); }
+        .desc { fill: white; font-family: sans-serif; font-size: ${descFontSize}px; filter: url(#shadow); opacity: 0.9; }
+      </style>`;
+
+    let y = padding + titleFontSize;
+    titleLines.forEach((line: string) => {
+      svgOverlay += `<text x="${padding}" y="${y}" class="title">${line}</text>`;
+      y += titleFontSize * 1.2;
+    });
+
+    y += descFontSize * 0.5;
+    descLines.forEach((line: string) => {
+      svgOverlay += `<text x="${padding}" y="${y}" class="desc">${line}</text>`;
+      y += descFontSize * 1.4;
+    });
+    svgOverlay += `</svg>`;
+
+    const finalImageBuffer = await sharp(imageBuffer)
+      .composite([{ input: Buffer.from(svgOverlay), top: 0, left: 0 }])
+      .jpeg({ quality: 90 })
+      .toBuffer();
+
+    const finalBase64 = `data:image/jpeg;base64,${finalImageBuffer.toString('base64')}`;
+
+    // 4. Consume integral
+    await axios.post("http://aibigtree.com/api/tool/consume", { userId, toolId });
+
+    // 5. Save Result to SaaS
+    const saveRes = await axios.post("http://aibigtree.com/api/upload/save-result", {
+      userId,
+      toolId,
+      source: "result",
+      base64s: [finalBase64],
+      idempotencyKey
+    });
+
+    // 6. Return response to user (SaaS URL + generated image for display)
+    res.json({
+      success: true,
+      imageUrl: finalBase64,
+      saasRecord: saveRes.data
+    });
+
+  } catch (error: any) {
+    console.error("Unified generation error:", error.response?.data || error.message);
+    res.status(500).json({ 
+      success: false, 
+      error: error.response?.data?.message || error.message 
+    });
+  }
+});
+
+// Gemini API route (Legacy fallback)
 app.post("/api/gemini", async (req, res) => {
   try {
     const { model, contents, config } = req.body;
@@ -55,7 +188,6 @@ app.post("/api/gemini", async (req, res) => {
       return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server." });
     }
 
-    // Use ai.models.generateContent as per the @google/genai SDK pattern
     const result = await (genAI as any).models.generateContent({
       model,
       contents,
