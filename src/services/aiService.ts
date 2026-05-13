@@ -1,4 +1,3 @@
-import { GoogleGenAI, Type } from "@google/genai";
 import { AspectRatio, Resolution } from "../types";
 
 async function callGeminiProxy(payload: any) {
