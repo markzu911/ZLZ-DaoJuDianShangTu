@@ -146,7 +146,8 @@ app.post("/api/generate-knife", async (req, res) => {
 
     const finalImageBuffer = await sharp(imageBuffer)
       .composite([{ input: Buffer.from(svgOverlay), top: 0, left: 0 }])
-      .jpeg({ quality: 90 })
+      .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 85 })
       .toBuffer();
 
     const finalBase64 = `data:image/jpeg;base64,${finalImageBuffer.toString('base64')}`;
@@ -171,10 +172,11 @@ app.post("/api/generate-knife", async (req, res) => {
     });
 
   } catch (error: any) {
-    console.error("Unified generation error:", error.response?.data || error.message);
-    res.status(500).json({ 
+    const errorMessage = error.response?.data?.message || (error.response?.status === 413 ? "图片数据太大，已被服务器拒绝 (413)" : error.message);
+    console.error("Unified generation error:", errorMessage, error.response?.data);
+    res.status(error.response?.status || 500).json({ 
       success: false, 
-      error: error.response?.data?.message || error.message 
+      error: errorMessage
     });
   }
 });
