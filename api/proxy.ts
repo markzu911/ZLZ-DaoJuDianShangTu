@@ -46,6 +46,10 @@ app.post("/api/tool/launch", (req, res) => proxyRequest(req, res, "/api/tool/lau
 app.post("/api/tool/verify", (req, res) => proxyRequest(req, res, "/api/tool/verify"));
 app.post("/api/tool/consume", (req, res) => proxyRequest(req, res, "/api/tool/consume"));
 app.post("/api/upload/save-result", (req, res) => proxyRequest(req, res, "/api/upload/save-result"));
+app.post("/api/upload/direct-token", (req, res) => proxyRequest(req, res, "/api/upload/direct-token"));
+app.post("/api/upload/commit", (req, res) => proxyRequest(req, res, "/api/upload/commit"));
+app.get("/api/upload/image", (req, res) => proxyRequest(req, res, "/api/upload/image"));
+app.delete("/api/upload/image", (req, res) => proxyRequest(req, res, "/api/upload/image"));
 
 // Dedicated Generation Endpoint (V4 3-Step BEST PRACTICE: Tool Backend Handles Integration)
 app.post("/api/generate-knife", async (req, res) => {
@@ -155,20 +159,51 @@ app.post("/api/generate-knife", async (req, res) => {
     // 4. Consume integral
     await axios.post("http://aibigtree.com/api/tool/consume", { userId, toolId });
 
-    // 5. Save Result to SaaS
-    const saveRes = await axios.post("http://aibigtree.com/api/upload/save-result", {
+    // 5. Save Result to SaaS using the standard 3-step OSS upload flow
+    const tokenRes = await axios.post("http://aibigtree.com/api/upload/direct-token", {
       userId,
       toolId,
       source: "result",
-      base64s: [finalBase64],
-      idempotencyKey
+      mimeType: "image/jpeg",
+      fileName: "result.jpeg",
+      fileSize: finalImageBuffer.byteLength
     });
 
-    // 6. Return response to user (SaaS URL + generated image for display)
+    if (!tokenRes.data.success) {
+      throw new Error(tokenRes.data.error || "获取上传地址失败");
+    }
+
+    const { uploadUrl, method, headers, objectKey } = tokenRes.data;
+
+    // 6. PUT to OSS
+    const uploadRes = await fetch(uploadUrl, {
+      method: method || 'PUT',
+      headers,
+      body: finalImageBuffer
+    });
+
+    if (!uploadRes.ok) {
+      throw new Error(`OSS 上传失败: ${uploadRes.status}`);
+    }
+
+    // 7. Commit
+    const commitRes = await axios.post("http://aibigtree.com/api/upload/commit", {
+      userId,
+      toolId,
+      source: "result",
+      objectKey: objectKey,
+      fileSize: finalImageBuffer.byteLength
+    });
+
+    if (!commitRes.data.success || !commitRes.data.savedToRecords) {
+      throw new Error(commitRes.data.error || "图片入库失败");
+    }
+
+    // 8. Return response to user (SaaS URL + generated image for display)
     res.json({
       success: true,
       imageUrl: finalBase64,
-      saasRecord: saveRes.data
+      saasRecord: commitRes.data
     });
 
   } catch (error: any) {
