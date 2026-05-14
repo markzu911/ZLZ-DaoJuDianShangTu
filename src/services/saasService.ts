@@ -1,11 +1,13 @@
 
 export interface SaasUser {
+  id: string;
   name: string;
   enterprise: string;
   integral: number;
 }
 
 export interface SaasTool {
+  id: string;
   name: string;
   integral: number;
 }
@@ -37,30 +39,60 @@ export interface ConsumeResponse {
   message?: string;
 }
 
-export interface SaveResultResponse {
+export interface DirectTokenRequest {
+  userId: string;
+  toolId: string;
+  source: "result";
+  mimeType: string;
+  fileName?: string;
+  fileSize: number;
+}
+
+export interface DirectTokenResponse {
   success: boolean;
-  source: string;
+  uploadUrl: string;
+  objectKey: string;
+  headers?: Record<string, string>;
+  message?: string;
+}
+
+export interface CommitRequest {
+  userId: string;
+  toolId: string;
+  source: "result";
+  objectKey: string;
+  fileSize: number;
+}
+
+export interface CommitResponse {
+  success: boolean;
   savedToRecords: boolean;
-  recordId?: string;
-  url?: string;
+  recordId: string;
+  url: string;
+  image: {
+    recordId: string;
+    url: string;
+    fileName: string;
+    savedToRecords: boolean;
+  };
   message?: string;
 }
 
 class SaasService {
-  private baseUrl = ""; // Base URL will be determined by the proxy or absolute path if provided
-
-  setBaseUrl(url: string) {
-    this.baseUrl = url.endsWith("/") ? url.slice(0, -1) : url;
-  }
-
-  private async fetchApi(path: string, body: any) {
-    const response = await fetch(`${path}`, {
-      method: "POST",
+  private async fetchApi(path: string, body: any, method = "POST") {
+    const url = path.startsWith("http") ? path : path;
+    const options: RequestInit = {
+      method,
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(body),
-    });
+    };
+
+    if (method !== "GET" && body) {
+      options.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(url, options);
     return response.json();
   }
 
@@ -76,17 +108,42 @@ class SaasService {
     return this.fetchApi("/api/tool/consume", { userId, toolId });
   }
 
-  async saveResult(params: {
-    userId: string;
-    toolId: string;
-    base64s?: string[];
-    imageUrls?: string[];
-    idempotencyKey?: string;
-  }): Promise<SaveResultResponse> {
-    return this.fetchApi("/api/upload/save-result", {
-      ...params,
-      source: "result"
+  async getDirectToken(req: DirectTokenRequest): Promise<DirectTokenResponse> {
+    return this.fetchApi("/api/upload/direct-token", req);
+  }
+
+  async commitUpload(req: CommitRequest): Promise<CommitResponse> {
+    return this.fetchApi("/api/upload/commit", req);
+  }
+
+  async uploadImage(base64: string, userId: string, toolId: string): Promise<any> {
+    const response = await fetch("/api/save-result", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ userId, toolId, base64 }),
     });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Failed to save result");
+    }
+
+    return {
+      image: data.data,
+      currentIntegral: data.currentIntegral
+    };
+  }
+
+  async listImages(userId: string, role: number = 1) {
+    const params = new URLSearchParams({ userId, role: role.toString() });
+    const response = await fetch(`/api/upload/image?${params.toString()}`);
+    return response.json();
+  }
+
+  async deleteImage(id: string, userId: string, role: number = 1) {
+    return this.fetchApi("/api/upload/image", { id, userId, role }, "DELETE");
   }
 }
 

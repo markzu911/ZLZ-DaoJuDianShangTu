@@ -2,7 +2,6 @@ import express from "express";
 import axios from "axios";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
-import sharp from "sharp";
 
 dotenv.config();
 
@@ -31,193 +30,103 @@ const proxyRequest = async (req: express.Request, res: express.Response, targetP
     const response = await axios({
       method: req.method,
       url: targetUrl,
-      data: req.body,
+      data: req.method !== 'GET' ? req.body : undefined,
+      params: req.method === 'GET' ? req.query : undefined,
       headers: { 'Content-Type': 'application/json' }
     });
     res.status(response.status).json(response.data);
   } catch (error: any) {
-    console.error(`Proxy error for ${targetPath}:`, error.message);
-    res.status(error.response?.status || 500).json(error.response?.data || { error: "代理转发失败" });
+    console.error(`Proxy error for ${req.method} ${targetPath}:`, error.response?.data || error.message);
+    res.status(error.response?.status || 500).json(error.response?.data || { error: "代理转发失败", details: error.message });
   }
 };
 
-// Tool routes
+// Tool & Credit routes
 app.post("/api/tool/launch", (req, res) => proxyRequest(req, res, "/api/tool/launch"));
 app.post("/api/tool/verify", (req, res) => proxyRequest(req, res, "/api/tool/verify"));
 app.post("/api/tool/consume", (req, res) => proxyRequest(req, res, "/api/tool/consume"));
-app.post("/api/upload/save-result", (req, res) => proxyRequest(req, res, "/api/upload/save-result"));
-app.post("/api/upload/direct-token", (req, res) => proxyRequest(req, res, "/api/upload/direct-token"));
-app.post("/api/upload/commit", (req, res) => proxyRequest(req, res, "/api/upload/commit"));
-app.get("/api/upload/image", (req, res) => proxyRequest(req, res, "/api/upload/image"));
-app.delete("/api/upload/image", (req, res) => proxyRequest(req, res, "/api/upload/image"));
 
-// Dedicated Generation Endpoint (V4 3-Step BEST PRACTICE: Tool Backend Handles Integration)
-app.post("/api/generate-knife", async (req, res) => {
-  const { 
-    userId, 
-    toolId, 
-    title, 
-    description, 
-    originalImage, 
-    stylePrompt, 
-    aspectRatio, 
-    resolution,
-    idempotencyKey 
-  } = req.body;
+// Consolidated Save Result endpoint (Backend-to-Backend flow)
+app.post("/api/save-result", async (req, res) => {
+  const { userId, toolId, base64 } = req.body;
+
+  if (!userId || !toolId || !base64) {
+    return res.status(400).json({ success: false, message: "Missing userId, toolId, or base64" });
+  }
 
   try {
-    // 1. Verify integral via SaaS
-    const verifyRes = await axios.post("http://aibigtree.com/api/tool/verify", { userId, toolId });
-    if (!verifyRes.data.success) {
-      return res.status(403).json(verifyRes.data);
+    const targetBaseUrl = "http://aibigtree.com";
+    const base64Data = base64.includes(",") ? base64.split(",")[1] : base64;
+    const buffer = Buffer.from(base64Data, 'base64');
+    const fileSize = buffer.length;
+
+    // 1. Consume credits
+    console.log(`[SaveResult] Consuming credits for user ${userId}, tool ${toolId}`);
+    const consumeRes = await axios.post(`${targetBaseUrl}/api/tool/consume`, { userId, toolId });
+    if (!consumeRes.data.success) {
+      throw new Error(consumeRes.data.message || "Consume failed");
     }
 
-    // 2. Generate Image via Gemini
-    const geminiResponse = await (genAI as any).models.generateContent({
-      model: "gemini-3.1-flash-image-preview",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { inlineData: { mimeType: "image/jpeg", data: originalImage.split(",")[1] || originalImage } },
-            { text: stylePrompt }
-          ]
-        }
-      ],
-      config: {
-        imageConfig: { aspectRatio, imageSize: resolution }
-      }
-    });
-
-    let base64Image = "";
-    for (const part of geminiResponse.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) {
-        base64Image = part.inlineData.data;
-        break;
-      }
-    }
-
-    if (!base64Image) {
-      throw new Error("AI did not return image data");
-    }
-
-    // 3. Process image server-side (Add Text Overlay)
-    const imageBuffer = Buffer.from(base64Image, 'base64');
-    const imageProcessor = sharp(imageBuffer).rotate();
-    const metadata = await imageProcessor.metadata();
-    const width = metadata.width || 1024;
-    const height = metadata.height || 1024;
-
-    const titleFontSize = Math.floor(width * 0.065);
-    const descFontSize = Math.floor(width * 0.028);
-    const padding = width * 0.05;
-
-    // Split text into lines
-    const titleLines = title.split("\n").map((l: string) => l.trim()).filter((l: string) => l !== "");
-    const descLines = description.split("\n").map((l: string) => l.trim()).filter((l: string) => l !== "");
-
-    // Create SVG overlay
-    let svgOverlay = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-          <feGaussianBlur in="SourceAlpha" stdDeviation="3" />
-          <feOffset dx="2" dy="2" result="offsetblur" />
-          <feComponentTransfer>
-            <feFuncA type="linear" slope="0.5" />
-          </feComponentTransfer>
-          <feMerge>
-            <feMergeNode />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-      <style>
-        .title { fill: white; font-family: sans-serif; font-weight: bold; font-size: ${titleFontSize}px; filter: url(#shadow); }
-        .desc { fill: white; font-family: sans-serif; font-size: ${descFontSize}px; filter: url(#shadow); opacity: 0.9; }
-      </style>`;
-
-    let y = padding + titleFontSize;
-    titleLines.forEach((line: string) => {
-      svgOverlay += `<text x="${padding}" y="${y}" class="title">${line}</text>`;
-      y += titleFontSize * 1.2;
-    });
-
-    y += descFontSize * 0.5;
-    descLines.forEach((line: string) => {
-      svgOverlay += `<text x="${padding}" y="${y}" class="desc">${line}</text>`;
-      y += descFontSize * 1.4;
-    });
-    svgOverlay += `</svg>`;
-
-    const finalImageBuffer = await imageProcessor
-      .composite([{ input: Buffer.from(svgOverlay), top: 0, left: 0 }])
-      .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 85 })
-      .toBuffer();
-
-    const finalBase64 = `data:image/jpeg;base64,${finalImageBuffer.toString('base64')}`;
-
-    // 4. Consume integral
-    await axios.post("http://aibigtree.com/api/tool/consume", { userId, toolId });
-
-    // 5. Save Result to SaaS using the standard 3-step OSS upload flow
-    const tokenRes = await axios.post("http://aibigtree.com/api/upload/direct-token", {
+    // 2. Get direct upload token
+    console.log(`[SaveResult] Getting direct token`);
+    const tokenRes = await axios.post(`${targetBaseUrl}/api/upload/direct-token`, {
       userId,
       toolId,
       source: "result",
-      mimeType: "image/jpeg",
-      fileName: "result.jpeg",
-      fileSize: finalImageBuffer.byteLength
+      mimeType: "image/png",
+      fileName: "result.png",
+      fileSize
     });
-
     if (!tokenRes.data.success) {
-      throw new Error(tokenRes.data.error || "获取上传地址失败");
+      throw new Error(tokenRes.data.message || "Failed to get upload token");
     }
 
-    const { uploadUrl, method, headers, objectKey } = tokenRes.data;
+    const { uploadUrl, objectKey, headers } = tokenRes.data;
 
-    // 6. PUT to OSS
-    const uploadRes = await fetch(uploadUrl, {
-      method: method || 'PUT',
-      headers,
-      body: finalImageBuffer
+    // 3. PUT image to OSS (direct backend upload)
+    console.log(`[SaveResult] Uploading to OSS: ${objectKey}`);
+    await axios.put(uploadUrl, buffer, {
+      headers: {
+        ...headers,
+        "Content-Type": "image/png"
+      }
     });
 
-    if (!uploadRes.ok) {
-      throw new Error(`OSS 上传失败: ${uploadRes.status}`);
-    }
-
-    // 7. Commit
-    const commitRes = await axios.post("http://aibigtree.com/api/upload/commit", {
+    // 4. Commit upload
+    console.log(`[SaveResult] Committing upload: ${objectKey}`);
+    const commitRes = await axios.post(`${targetBaseUrl}/api/upload/commit`, {
       userId,
       toolId,
       source: "result",
-      objectKey: objectKey,
-      fileSize: finalImageBuffer.byteLength
+      objectKey,
+      fileSize
     });
 
     if (!commitRes.data.success || !commitRes.data.savedToRecords) {
-      throw new Error(commitRes.data.error || "图片入库失败");
+      throw new Error(commitRes.data.message || "Commit to database failed");
     }
 
-    // 8. Return response to user (SaaS URL + generated image for display)
+    console.log(`[SaveResult] Success: recordId=${commitRes.data.recordId}`);
     res.json({
       success: true,
-      imageUrl: finalBase64,
-      saasRecord: commitRes.data
+      data: commitRes.data.image,
+      currentIntegral: consumeRes.data.data?.currentIntegral
     });
 
   } catch (error: any) {
-    const errorMessage = error.response?.data?.message || (error.response?.status === 413 ? "图片数据太大，已被服务器拒绝 (413)" : error.message);
-    console.error("Unified generation error:", errorMessage, error.response?.data);
-    res.status(error.response?.status || 500).json({ 
-      success: false, 
-      error: errorMessage
+    console.error("[SaveResult] Error:", error.response?.data || error.message);
+    res.status(500).json({
+      success: false,
+      message: error.response?.data?.message || error.message || "保存失败"
     });
   }
 });
 
-// Gemini API route (Legacy fallback)
+// Image Management routes
+app.get("/api/upload/image", (req, res) => proxyRequest(req, res, "/api/upload/image"));
+app.delete("/api/upload/image", (req, res) => proxyRequest(req, res, "/api/upload/image"));
+
+// Gemini API route
 app.post("/api/gemini", async (req, res) => {
   try {
     const { model, contents, config } = req.body;
@@ -226,6 +135,7 @@ app.post("/api/gemini", async (req, res) => {
       return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server." });
     }
 
+    // Use ai.models.generateContent as per the @google/genai SDK pattern
     const result = await (genAI as any).models.generateContent({
       model,
       contents,

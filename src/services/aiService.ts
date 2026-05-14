@@ -20,31 +20,6 @@ async function callGeminiProxy(payload: any) {
   return result;
 }
 
-export async function generateKnifeImageServerSide(params: {
-  userId: string | null;
-  toolId: string | null;
-  title: string;
-  description: string;
-  originalImage: string;
-  stylePrompt: string;
-  aspectRatio: string;
-  resolution: string;
-  idempotencyKey: string;
-}) {
-  const response = await fetch("/api/generate-knife", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.error || errorData.message || "生成失败");
-  }
-
-  return response.json();
-}
-
 export async function analyzeProductImage(base64Image: string) {
   const model = "gemini-3-flash-preview"; 
   

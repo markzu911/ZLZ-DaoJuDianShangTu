@@ -40,7 +40,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 
 import { AppStep, AspectRatio, Resolution, GenerationHistory } from "./types";
-import { analyzeProductImage, generateEcommerceImage, generateKnifeImageServerSide } from "./services/aiService";
+import { analyzeProductImage, generateEcommerceImage } from "./services/aiService";
 import { addTextToImage } from "./lib/imageUtils";
 import { saasService, SaasUser, SaasTool } from "./services/saasService";
 
@@ -97,9 +97,8 @@ export default function App() {
     const handleMessage = async (event: MessageEvent) => {
       const data = event.data;
       if (data.type === 'SAAS_INIT') {
-        const filterId = (id: any) => id === "null" || id === "undefined" || !id ? null : id;
-        const uId = filterId(data.userId);
-        const tId = filterId(data.toolId);
+        const uId = data.userId === "null" || data.userId === "undefined" ? null : data.userId;
+        const tId = data.toolId === "null" || data.toolId === "undefined" ? null : data.toolId;
         
         setUserId(uId);
         setToolId(tId);
@@ -194,80 +193,82 @@ export default function App() {
     if (!originalImage) return;
     
     setLoading(true);
-    setLoadingText("AI 正在构思并生成、合成大图...");
+    setLoadingText("正在检查积分状态...");
 
-    const requestId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' 
-      ? crypto.randomUUID() 
-      : `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    // SaaS Verify
+    if (userId && toolId) {
+      try {
+        const verifyRes = await saasService.verify(userId, toolId);
+        if (!verifyRes.success) {
+          alert(verifyRes.message || "积分不足，无法生成");
+          setLoading(false);
+          return;
+        }
+      } catch (error) {
+        console.error("Verify failed", error);
+        // Fail open or fail closed? Usually fail closed for credits.
+        alert("网络异常，无法验证积分");
+        setLoading(false);
+        return;
+      }
+    }
 
     setActiveMainTab("RESULT"); // Direct switch to result view
     setLoadingText("AI 正在为您精心构思并生成电商大图...");
     try {
-      // 1. Prepare Style Prompt (same logic as before but for server consumption)
-      const identityInstruction = `CRITICAL: The generated image MUST preserve the EXACT physical features of the provided knife. This includes its shape, blade color/metal texture, handle design (material, color, curvature), and any visible text, logos, or engravings on the blade. ${initContext ? `Context from SaaS: ${initContext}. ` : ""}${initPrompts.length > 0 ? `Additional Keywords: ${initPrompts.join(", ")}. ` : ""}DO NOT simplify or replace it with a generic knife. COMPOSITION: Ensure the main subject (hand, knife, food) is positioned in the center, right, or bottom of the frame, leaving the top-left corner as a clean, clear area for brand text. Do not place any complex or bright details in the top-left portion.`;
-      
-      let stylePrompt = selectedStyle;
-      if (selectedStyle.includes("特写镜头")) {
-        stylePrompt = `${identityInstruction} Style: Close-up of a chef's hand gripping the knife with high detail on the blade texture. The knife is cutting a fresh ingredient. Ultra-realistic, 8k, cinematic lighting.`;
-      } else if (selectedStyle.includes("厨房工作台")) {
-        stylePrompt = `${identityInstruction} Style: Professional kitchen setting, marble countertop, knife resting next to sliced vegetables. Warm natural wood accents. Commercial photography style.`;
-      } else if (selectedStyle.includes("露营")) {
-        stylePrompt = `${identityInstruction} Style: Outdoors, rugged environment, knife sticking into a wooden stump or next to a campfire. Moody atmosphere.`;
-      } else if (selectedStyle.includes("展示盒")) {
-        stylePrompt = `${identityInstruction} Style: Luxury product photography, knife placed inside a velvet-lined black wooden box. Elegant spotlighting, high contrast.`;
-      } else if (selectedStyle.includes("自然光")) {
-        stylePrompt = `${identityInstruction} Style: Minimalist home kitchen, bright soft natural light from a window, knife on a clean cutting board. Airy and fresh aesthetic.`;
-      }
+      const gImg = await generateEcommerceImage(
+        originalImage, 
+        selectedStyle, 
+        aspectRatio, 
+        resolution,
+        initContext,
+        initPrompts
+      );
+      setGeneratedImage(gImg);
+      setLoadingText("正在为图片添加精美文案...");
+      const fImg = await addTextToImage(gImg, title, description, aspectRatio);
+      setFinalImage(fImg);
 
-      // 2. Call the unified Server-Side Generation Engine
-      const res = await generateKnifeImageServerSide({
-        userId,
-        toolId,
+      // SaaS Consume & Persistence
+      if (userId && toolId) {
+        setLoadingText("正在完成积分扣费并保存图片...");
+        try {
+          // unified saveResult endpoint performs consume, direct-token, and commit
+          const saveRes = await saasService.uploadImage(fImg, userId, toolId);
+          
+          // Update local integral state
+          if (saveRes.currentIntegral !== undefined) {
+             setUserData(prev => prev ? { ...prev, integral: saveRes.currentIntegral } : null);
+          }
+
+          // Notify parent if needed
+          window.parent.postMessage({
+            type: 'SAAS_CONSUME_RESULT',
+            userId,
+            toolId,
+            success: true
+          }, '*');
+        } catch (error) {
+          console.error("Save result failed", error);
+        }
+      }
+      
+      const newEntry: GenerationHistory = {
+        id: Date.now().toString(),
+        originalImage,
+        generatedImage: gImg,
+        finalImage: fImg,
         title,
         description,
-        originalImage,
-        stylePrompt,
+        style: selectedStyle,
         aspectRatio,
         resolution,
-        idempotencyKey: requestId
-      });
-
-      if (res.success) {
-        setFinalImage(res.imageUrl);
-        setGeneratedImage(res.imageUrl);
-
-        // Update local integral if we have user data
-        if (userData && toolData) {
-          setUserData(prev => prev ? { ...prev, integral: prev.integral - toolData!.integral } : null);
-        }
-
-        // Notify parent as per SaaS V4 spec
-        window.parent.postMessage({
-          type: 'SAAS_CONSUME',
-          userId,
-          toolId,
-          requestId,
-          success: true
-        }, '*');
-
-        const newEntry: GenerationHistory = {
-          id: Date.now().toString(),
-          originalImage: originalImage || "",
-          generatedImage: res.imageUrl,
-          finalImage: res.imageUrl,
-          title,
-          description,
-          style: selectedStyle,
-          aspectRatio,
-          resolution,
-          timestamp: Date.now(),
-        };
-        setHistory(prev => [newEntry, ...prev]);
-        setStep("RESULT");
-      }
+        timestamp: Date.now(),
+      };
+      setHistory(prev => [newEntry, ...prev]);
+      setStep("RESULT");
     } catch (error) {
       console.error(error);
-      alert("生成失败: " + (error instanceof Error ? error.message : "未知错误"));
     } finally {
       setLoading(false);
     }
