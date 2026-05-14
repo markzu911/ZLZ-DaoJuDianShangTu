@@ -93,7 +93,18 @@ class SaasService {
     }
 
     const response = await fetch(url, options);
-    return response.json();
+    const text = await response.text();
+    let data: any = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { error: text.slice(0, 300) };
+    }
+
+    if (!response.ok || data.success === false) {
+      throw new Error(data.message || data.error || `请求失败: ${response.status}`);
+    }
+    return data;
   }
 
   async launch(userId: string, toolId: string): Promise<LaunchResponse> {
@@ -125,9 +136,16 @@ class SaasService {
       body: JSON.stringify({ userId, toolId, base64 }),
     });
 
-    const data = await response.json();
+    const text = await response.text();
+    let data: any = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { message: text.slice(0, 500) };
+    }
+
     if (!response.ok || !data.success) {
-      throw new Error(data.message || "Failed to save result");
+      throw new Error(data.message || `Failed to save result: ${response.status}`);
     }
 
     return {
