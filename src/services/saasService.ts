@@ -128,29 +128,62 @@ class SaasService {
   }
 
   async uploadImage(base64: string, userId: string, toolId: string): Promise<any> {
-    const response = await fetch("/api/save-result", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ userId, toolId, base64 }),
-    });
-
-    const text = await response.text();
-    let data: any = {};
-    try {
-      data = text ? JSON.parse(text) : {};
-    } catch {
-      data = { message: text.slice(0, 500) };
+    // 1. Consume credits
+    const consumeRes = await this.consume(userId, toolId);
+    if (!consumeRes.success) {
+      throw new Error(consumeRes.message || "积分扣除失败");
     }
 
-    if (!response.ok || !data.success) {
-      throw new Error(data.message || `Failed to save result: ${response.status}`);
+    // 2. Convert base64 to Blob
+    const res = await fetch(base64);
+    const blob = await res.blob();
+    const fileSize = blob.size;
+    const mimeType = blob.type || "image/jpeg";
+
+    // 3. Get direct token
+    const tokenRes = await this.getDirectToken({
+      userId,
+      toolId,
+      source: "result",
+      mimeType,
+      fileName: "result.jpg",
+      fileSize
+    });
+
+    if (!tokenRes.success) {
+      throw new Error(tokenRes.message || "获取上传地址失败");
+    }
+
+    // 4. PUT to OSS (Directly from browser to avoid proxy 413)
+    const uploadRes = await fetch(tokenRes.uploadUrl, {
+      method: "PUT",
+      headers: {
+        ...tokenRes.headers,
+        "Content-Type": mimeType
+      },
+      body: blob
+    });
+
+    if (!uploadRes.ok) {
+      throw new Error(`OSS 上传失败: ${uploadRes.status}`);
+    }
+
+    // 5. Commit
+    const commitRes = await this.commitUpload({
+      userId,
+      toolId,
+      source: "result",
+      objectKey: tokenRes.objectKey,
+      fileSize
+    });
+
+    if (!commitRes.success || !commitRes.savedToRecords) {
+      throw new Error(commitRes.message || "图片入库失败");
     }
 
     return {
-      image: data.data,
-      currentIntegral: data.currentIntegral
+      image: commitRes.image,
+      currentIntegral: consumeRes.data?.currentIntegral
     };
   }
 

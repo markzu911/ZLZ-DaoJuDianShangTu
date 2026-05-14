@@ -64,7 +64,7 @@ export async function addTextToImage(
         ctx.fillText(line, startX, descStartTop + (index * descFontSize * 1.5));
       });
 
-      resolve(canvas.toDataURL("image/png"));
+      resolve(canvas.toDataURL("image/jpeg", 0.9));
     };
     img.onerror = reject;
     img.src = imageSrc;

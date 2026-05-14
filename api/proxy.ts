@@ -47,7 +47,13 @@ app.post("/api/tool/launch", (req, res) => proxyRequest(req, res, "/api/tool/lau
 app.post("/api/tool/verify", (req, res) => proxyRequest(req, res, "/api/tool/verify"));
 app.post("/api/tool/consume", (req, res) => proxyRequest(req, res, "/api/tool/consume"));
 
-// Consolidated Save Result endpoint (Backend-to-Backend flow)
+// Image Upload & Management routes
+app.post("/api/upload/direct-token", (req, res) => proxyRequest(req, res, "/api/upload/direct-token"));
+app.post("/api/upload/commit", (req, res) => proxyRequest(req, res, "/api/upload/commit"));
+app.get("/api/upload/image", (req, res) => proxyRequest(req, res, "/api/upload/image"));
+app.delete("/api/upload/image", (req, res) => proxyRequest(req, res, "/api/upload/image"));
+
+// Consolidated Save Result endpoint (Keep as fallback or for small images, but we will prefer individual steps)
 app.post("/api/save-result", async (req, res) => {
   const { userId, toolId, base64 } = req.body;
 
