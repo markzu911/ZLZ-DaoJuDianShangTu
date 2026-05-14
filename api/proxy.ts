@@ -103,7 +103,8 @@ app.post("/api/generate-knife", async (req, res) => {
 
     // 3. Process image server-side (Add Text Overlay)
     const imageBuffer = Buffer.from(base64Image, 'base64');
-    const metadata = await sharp(imageBuffer).metadata();
+    const imageProcessor = sharp(imageBuffer).rotate();
+    const metadata = await imageProcessor.metadata();
     const width = metadata.width || 1024;
     const height = metadata.height || 1024;
 
@@ -116,7 +117,7 @@ app.post("/api/generate-knife", async (req, res) => {
     const descLines = description.split("\n").map((l: string) => l.trim()).filter((l: string) => l !== "");
 
     // Create SVG overlay
-    let svgOverlay = `<svg width="${width}" height="${height}">
+    let svgOverlay = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
           <feGaussianBlur in="SourceAlpha" stdDeviation="3" />
@@ -148,7 +149,7 @@ app.post("/api/generate-knife", async (req, res) => {
     });
     svgOverlay += `</svg>`;
 
-    const finalImageBuffer = await sharp(imageBuffer)
+    const finalImageBuffer = await imageProcessor
       .composite([{ input: Buffer.from(svgOverlay), top: 0, left: 0 }])
       .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 85 })
