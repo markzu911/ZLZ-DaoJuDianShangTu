@@ -57,10 +57,10 @@ const ASPECT_RATIOS: { label: string; value: AspectRatio }[] = [
   { label: "16:9", value: "16:9" },
 ];
 
-const RESOLUTIONS: { label: string; value: Resolution }[] = [
-  { label: "1K", value: "1K" },
-  { label: "2K", value: "2K" },
-  { label: "4K", value: "4K" },
+const RESOLUTIONS: { label: string; value: Resolution; desc?: string }[] = [
+  { label: "1K 标准", value: "1K", desc: "1024x1024" },
+  { label: "2K 高清", value: "2K", desc: "2048x2048" },
+  { label: "4K 超清", value: "4K", desc: "4096x4096" },
 ];
 
 export default function App() {
@@ -444,9 +444,14 @@ export default function App() {
               <div className="space-y-6 animate-in fade-in duration-500">
                 {/* 2.1 Feature Analysis Card */}
                 <Card className="p-6 rounded-[32px] border-none shadow-[0_8px_30px_rgb(0,0,0,0.04)] bg-white relative overflow-hidden">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="text-orange-400"><Sparkles className="w-6 h-6" /></div>
-                    <h3 className="font-bold text-lg text-zinc-800">刀具特征分析 (可自由修改)</h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="text-orange-400"><Sparkles className="w-6 h-6" /></div>
+                      <h3 className="font-bold text-lg text-zinc-800">刀具特征分析 (已设为自动填充简体中文)</h3>
+                    </div>
+                    <Badge variant="outline" className="bg-orange-50 text-orange-500 border-orange-100 font-bold">
+                      智能推荐
+                    </Badge>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4">
@@ -513,14 +518,15 @@ export default function App() {
 
                       <div className="space-y-3">
                         <Label className="text-xs text-zinc-400 font-bold block">输出分辨率</Label>
-                        <div className="flex gap-2">
+                        <div className="flex gap-3">
                           {RESOLUTIONS.map(res => (
                             <button
                               key={res.value}
                               onClick={() => setResolution(res.value)}
-                              className={`px-6 py-3 rounded-xl text-sm font-bold transition-all border ${resolution === res.value ? "bg-zinc-900 text-white border-zinc-900 shadow-lg shadow-zinc-200" : "bg-white text-zinc-400 border-zinc-100 hover:border-zinc-300"}`}
+                              className={`px-5 py-3 rounded-xl transition-all border flex flex-col items-center justify-center min-w-[100px] ${resolution === res.value ? "bg-zinc-900 text-white border-zinc-900 shadow-lg shadow-zinc-200" : "bg-white text-zinc-400 border-zinc-100 hover:border-zinc-300"}`}
                             >
-                              {res.label}
+                              <span className="text-sm font-bold">{res.label}</span>
+                              {res.desc && <span className={`text-[10px] mt-0.5 ${resolution === res.value ? "text-zinc-400" : "text-zinc-300"}`}>{res.desc}</span>}
                             </button>
                           ))}
                         </div>

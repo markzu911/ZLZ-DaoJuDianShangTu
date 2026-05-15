@@ -35,7 +35,7 @@ export async function analyzeProductImage(base64Image: string) {
             },
           },
           {
-            text: "You are an e-commerce marketing expert specializing in high-end kitchen knives (e.g., Damascas, Chef knives, Santoku). Analyze this knife and provide a professional, catchy title and a clear, short product description (max 15 words) highlighting its edge, material, or ergonomic handle in Chinese. Return the result in JSON format with keys 'title' and 'description'.",
+            text: "You are an e-commerce marketing expert specializing in high-end kitchen knives. Analyze this knife and provide a professional, catchy title and a clear, short product description (max 15 words) highlighting its key selling points (edge, material, weight, or handle). IMPORTANT: Use ONLY Simplified Chinese (简体中文). Return the result in JSON format with keys 'title' and 'description'.",
           },
         ],
       },
