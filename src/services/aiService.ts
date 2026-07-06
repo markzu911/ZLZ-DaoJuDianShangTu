@@ -21,7 +21,7 @@ async function callGeminiProxy(payload: any) {
 }
 
 export async function analyzeProductImage(base64Image: string) {
-  const model = "gemini-3-flash-preview"; 
+  const model = "gemini-3.5-flash"; 
   
   const payload = {
     model,
@@ -67,7 +67,7 @@ export async function generateEcommerceImage(
   extraContext?: string | null,
   extraPrompts?: string[]
 ) {
-  const model = "gemini-3.1-flash-image-preview";
+  const model = "gemini-3.1-flash-image";
   
   let stylePrompt = "";
   const saasContext = extraContext ? `Context from SaaS: ${extraContext}. ` : "";
