@@ -1460,6 +1460,24 @@ export default function App() {
 
               {/* Agent Dialogue Screen inside the card */}
               <div className="flex-1 flex flex-col h-full bg-[#f8fafc] relative min-w-0 overflow-hidden">
+                {/* Beautiful glowing loading overlay when generating */}
+                {loading && (
+                  <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-30 flex flex-col items-center justify-center gap-4 animate-in fade-in duration-300">
+                    <div className="relative flex items-center justify-center">
+                      {/* Outermost glowing rotating ring */}
+                      <div className="absolute w-20 h-20 rounded-full border-4 border-orange-500/10 border-t-orange-500 animate-spin" />
+                      {/* Inner pulsing container with icon */}
+                      <div className="w-14 h-14 rounded-full bg-orange-500/10 flex items-center justify-center animate-pulse">
+                        <Sparkles className="w-6 h-6 text-orange-500 animate-bounce" />
+                      </div>
+                    </div>
+                    <div className="text-center space-y-2 max-w-md px-6">
+                      <p className="text-base font-bold text-zinc-800 tracking-tight">{loadingText || "正在为您生成 4K 高清主图..."}</p>
+                      <p className="text-xs text-zinc-400 font-medium">智能算法融合中，这通常需要 15-25 秒，请稍候...</p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Message scroll wrapper */}
                 <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6">
                   {chatMessages.map((msg) => (
@@ -1517,13 +1535,14 @@ export default function App() {
 
                           {/* Conversational action buttons rendered directly inside the dialogue card */}
                           {msg.suggestions && msg.suggestions.length > 0 && (
-                            <div className="flex flex-wrap gap-2.5 mt-4 pt-3 border-t border-zinc-100/80">
+                            <div className={`flex flex-wrap gap-2.5 mt-4 pt-3 border-t border-zinc-100/80 ${loading ? "opacity-40 pointer-events-none" : ""}`}>
                               {msg.suggestions.map((sug) => {
                                 if (sug.variant === "blue") {
                                   return (
                                     <button
                                       key={sug.id}
                                       onClick={sug.action}
+                                      disabled={loading}
                                       className="bg-blue-50 hover:bg-blue-100/90 text-blue-600 border border-blue-100 px-5 py-2.5 rounded-full text-xs font-bold transition-all duration-300 flex items-center gap-1.5 cursor-pointer shadow-sm"
                                     >
                                       <Upload className="w-3.5 h-3.5" />
@@ -1535,6 +1554,7 @@ export default function App() {
                                   <button
                                     key={sug.id}
                                     onClick={sug.action}
+                                    disabled={loading}
                                     className={`px-4 py-2 rounded-full text-xs font-bold border transition-all duration-300 cursor-pointer ${sug.variant === "orange" ? "bg-orange-500 hover:bg-orange-600 text-white border-orange-500" : "bg-white hover:bg-zinc-50 border-zinc-200 text-zinc-600"}`}
                                   >
                                     {sug.label}
