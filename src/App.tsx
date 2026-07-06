@@ -387,12 +387,68 @@ export default function App() {
       {
         id: "ai-style-confirm-" + Date.now(),
         sender: "ai",
-        text: `已为您锁定 ${style} 风格方案。\n\n我们已经万事俱备：\n产品图：已就绪\n文案内容：已生成\n设计风格：${style}\n\n我们将采用 1:1 标准画幅比例与 1K 分辨率默认参数。您可以一键启动 AI 引擎生成最终的高清主图，或前往侧边栏按需调整画幅与分辨率参数。\n\n请点击下方按钮开始一键生成主图：`,
+        text: `已为您锁定【${style}】风格方案。\n\n为了完美适配您的推广渠道，请选择希望生成的【画幅比例】（建议手机端、社交媒体使用 3:4 竖屏，标准电商展示使用 1:1）：`,
+        timestamp: Date.now(),
+        suggestions: ASPECT_RATIOS.map((item, idx) => ({
+          id: `ratio-${idx}`,
+          label: item.label === "1:1" ? "1:1 标准主图" : item.label === "3:4" ? "3:4 手机详情" : item.label === "4:3" ? "4:3 电脑端宽屏" : "16:9 横屏海报",
+          variant: item.value === "1:1" ? "orange" : "outline" as any,
+          action: () => {
+            handleAgentSelectRatio(item.value, style);
+          }
+        }))
+      }
+    ]);
+  };
+
+  const handleAgentSelectRatio = (ratio: AspectRatio, style: string) => {
+    setAspectRatio(ratio);
+
+    setChatMessages(prev => [
+      ...prev,
+      {
+        id: "user-ratio-" + Date.now(),
+        sender: "user",
+        text: `设定画幅比例：${ratio}`,
+        timestamp: Date.now()
+      },
+      {
+        id: "ai-ratio-confirm-" + Date.now(),
+        sender: "ai",
+        text: `画幅比例已设定为：${ratio}。\n\n最后，请选择您的【输出画质/分辨率】（分辨率越高细节越细腻，4K超清将使用高精度超分算法）：`,
+        timestamp: Date.now(),
+        suggestions: RESOLUTIONS.map((item, idx) => ({
+          id: `resolution-${idx}`,
+          label: item.label,
+          variant: item.value === "1K" ? "orange" : "outline" as any,
+          action: () => {
+            handleAgentSelectResolution(item.value, style, ratio);
+          }
+        }))
+      }
+    ]);
+  };
+
+  const handleAgentSelectResolution = (res: Resolution, style: string, ratio: AspectRatio) => {
+    setResolution(res);
+
+    setChatMessages(prev => [
+      ...prev,
+      {
+        id: "user-res-" + Date.now(),
+        sender: "user",
+        text: `设定输出分辨率：${res}`,
+        timestamp: Date.now()
+      },
+      {
+        id: "ai-res-confirm-" + Date.now(),
+        sender: "ai",
+        text: `分辨率已设定为：${res}。\n\n所有参数已配置完毕！✨\n\n【配置清单】\n- 产品图：已就绪\n- 文案内容：已生成\n- 背景风格：${style}\n- 画幅比例：${ratio}\n- 输出分辨率：${res}\n\n我们将启动 AI 引擎生成最终的高清主图，请点击下方按钮开始一键生成：`,
         timestamp: Date.now(),
         suggestions: [
           {
             id: "one-click-generate",
-            label: "一键生成 4K 商业主图",
+            label: "一键生成图片",
             variant: "orange",
             action: () => {
               triggerAgentGeneration();
