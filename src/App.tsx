@@ -319,16 +319,34 @@ export default function App() {
           {
             id: "ai-anal-result-" + Date.now(),
             sender: "ai",
-            text: `厨刀产品特征分析完成。\n\n我已经为您构思了极具吸引力的电商文案：\n\n商铺标题：\n「 ${data.title} 」\n核心卖点：\n「 ${data.description} 」\n\n下一步，我们需要选择电商背景的主题风格。不同的视觉场景会完美契合不同的营销定位：\n\n1. 特写镜头：极致放大局部细节与钢材纹路，推荐专业高端定位。\n2. 俯拍视角：现代极简摆盘，适合展现高雅、干净的产品艺术感。\n3. 烹饪场景：充满人间烟火气和生活感，极富真实使用体验。\n\n请在下方选择您最喜欢的视觉风格：`,
+            text: `厨刀产品特征分析完成。\n\n我为您构思了以下极具吸引力的电商营销文案：\n\n📌 **商铺标题**：${data.title}\n📝 **核心卖点**：${data.description}\n\n这些文案将印制在主图中。您是否满意？满意请点击确认，或者您可以点击修改进行微调。`,
             timestamp: Date.now(),
-            suggestions: STYLES.map((style, idx) => ({
-              id: `style-${idx}`,
-              label: style,
-              variant: idx === 0 ? "orange" : "outline" as any,
-              action: () => {
-                handleAgentSelectStyle(style);
+            suggestions: [
+              {
+                id: "confirm-copy-btn",
+                label: "满意，去选背景风格",
+                variant: "orange",
+                action: () => {
+                  handleConfirmAnalysisCopy();
+                }
+              },
+              {
+                id: "edit-copy-btn",
+                label: "修改文案",
+                variant: "outline",
+                action: () => {
+                  setChatMessages(curr => [
+                    ...curr,
+                    {
+                      id: "ai-edit-copy-hint-" + Date.now(),
+                      sender: "ai",
+                      text: "您可以直接在对话框中告诉我要修改的内容（例如：‘标题改短一点’），或者点击右上角「属性设置」手动编辑。",
+                      timestamp: Date.now()
+                    }
+                  ]);
+                }
               }
-            }))
+            ]
           }
         ];
       });
@@ -341,25 +359,75 @@ export default function App() {
           {
             id: "ai-anal-err-" + Date.now(),
             sender: "ai",
-            text: `文案生成遇到了一点小麻烦，但我已经为您配置了经典备用营销文案：\n\n商铺标题：厨房大师精品主厨刀\n核心卖点：极速锋利，大马士革流线型人体工学手柄\n\n接下来，请选择主图的视觉风格：`,
+            text: `文案生成遇到了一点小麻烦，但我已经为您配置了经典备用营销文案：\n\n📌 **商铺标题**：厨房大师精品主厨刀\n📝 **核心卖点**：极速锋利，大马士革流线型人体工学手柄\n\n您是否满意？满意请点击确认，或者您可以点击修改进行微调。`,
             timestamp: Date.now(),
-            suggestions: STYLES.map((style, idx) => ({
-              id: `style-${idx}`,
-              label: style,
-              variant: idx === 0 ? "orange" : "outline" as any,
-              action: () => {
-                handleAgentSelectStyle(style);
+            suggestions: [
+              {
+                id: "confirm-copy-err-btn",
+                label: "满意，去选背景风格",
+                variant: "orange",
+                action: () => {
+                  setTitle("厨房大师精品主厨刀");
+                  titleRef.current = "厨房大师精品主厨刀";
+                  setDescription("极速锋利，大马士革流线型人体工学手柄");
+                  descriptionRef.current = "极速锋利，大马士革流线型人体工学手柄";
+                  handleConfirmAnalysisCopy();
+                }
+              },
+              {
+                id: "edit-copy-err-btn",
+                label: "修改文案",
+                variant: "outline",
+                action: () => {
+                  setChatMessages(curr => [
+                    ...curr,
+                    {
+                      id: "ai-edit-copy-hint-err-" + Date.now(),
+                      sender: "ai",
+                      text: "您可以直接在对话框中告诉我修改意见，或者点击右上角「属性设置」手动编辑。",
+                      timestamp: Date.now()
+                    }
+                  ]);
+                }
               }
-            }))
+            ]
           }
         ];
       });
     }
   };
 
+  const handleConfirmAnalysisCopy = () => {
+    setChatMessages(prev => [
+      ...prev,
+      {
+        id: "user-confirm-copy-" + Date.now(),
+        sender: "user",
+        text: "文案没问题，继续选风格吧",
+        timestamp: Date.now()
+      },
+      {
+        id: "ai-ask-style-" + Date.now(),
+        sender: "ai",
+        text: "太好了！文案已锁定。接下来，我们需要为这款刀具选择一个**视觉背景风格**：\n\n1. 特写镜头：极致放大局部细节与钢材纹路，推荐专业高端定位。\n2. 俯拍视角：现代极简摆盘，适合展现高雅、干净的产品艺术感。\n3. 烹饪场景：充满人间烟火气和生活感，极富真实使用体验。\n\n请在下方选择您最喜欢的视觉风格：",
+        timestamp: Date.now(),
+        suggestions: STYLES.map((style, idx) => ({
+          id: `style-${idx}`,
+          label: style,
+          variant: idx === 0 ? "orange" : "outline" as any,
+          action: () => {
+            handleAgentSelectStyle(style);
+          }
+        }))
+      }
+    ]);
+  };
+
   const triggerSkipAnalysis = () => {
     setTitle("至臻锋芒厨刀");
+    titleRef.current = "至臻锋芒厨刀";
     setDescription("匠心钢材，持久锋利，舒适手感");
+    descriptionRef.current = "匠心钢材，持久锋利，舒适手感";
     setStep("ANALYZE");
 
     setChatMessages(prev => [
@@ -367,13 +435,13 @@ export default function App() {
       {
         id: "user-skip-" + Date.now(),
         sender: "user",
-        text: "跳过分析，直接选择风格",
+        text: "跳过分析，直接使用默认文案并选风格",
         timestamp: Date.now()
       },
       {
         id: "ai-skip-res-" + Date.now(),
         sender: "ai",
-        text: "好的。已为您填充经典款营销文案：\n\n商铺标题：至臻锋芒厨刀\n核心卖点：匠心钢材，持久锋利，舒适手感\n\n接下来，请选择您最喜欢的视觉风格以供生成主图：",
+        text: "好的。已为您填充经典款营销文案：\n\n📌 **商铺标题**：至臻锋芒厨刀\n📝 **核心卖点**：匠心钢材，持久锋利，舒适手感\n\n如果您对这些默认文案满意，请选择您最喜欢的视觉风格：",
         timestamp: Date.now(),
         suggestions: STYLES.map((style, idx) => ({
           id: `style-${idx}`,
