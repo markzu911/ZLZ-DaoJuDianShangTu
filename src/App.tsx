@@ -118,6 +118,19 @@ export default function App() {
   const [userId, setUserId] = useState<string | null>(null);
   const [toolId, setToolId] = useState<string | null>(null);
   const [userData, setUserData] = useState<SaasUser | null>(null);
+  const originalImageRef = useRef<string | null>(null);
+  const selectedStyleRef = useRef<string>(STYLES[0]);
+  const aspectRatioRef = useRef<AspectRatio>("1:1");
+  const resolutionRef = useRef<Resolution>("1K");
+  const titleRef = useRef("");
+  const descriptionRef = useRef("");
+
+  useEffect(() => { originalImageRef.current = originalImage; }, [originalImage]);
+  useEffect(() => { selectedStyleRef.current = selectedStyle; }, [selectedStyle]);
+  useEffect(() => { aspectRatioRef.current = aspectRatio; }, [aspectRatio]);
+  useEffect(() => { resolutionRef.current = resolution; }, [resolution]);
+  useEffect(() => { titleRef.current = title; }, [title]);
+  useEffect(() => { descriptionRef.current = description; }, [description]);
   const [toolData, setToolData] = useState<SaasTool | null>(null);
   const [initContext, setInitContext] = useState<string | null>(null);
   const [initPrompts, setInitPrompts] = useState<string[]>([]);
@@ -224,6 +237,7 @@ export default function App() {
 
   const handleAgentImageLoad = (base64: string) => {
     setOriginalImage(base64);
+    originalImageRef.current = base64;
     
     const userMsgId = "user-img-" + Date.now();
     setChatMessages(prev => [
@@ -378,7 +392,8 @@ export default function App() {
     setLoading(true);
     setLoadingText("正在启动 AI 绘图引擎...");
 
-    if (!originalImage) {
+    const currentImg = originalImageRef.current;
+    if (!currentImg) {
       setChatMessages(prev => [
         ...prev,
         {
@@ -392,10 +407,12 @@ export default function App() {
       return;
     }
 
-    // Use passed params or fallback to state
-    const targetStyle = overrideStyle || selectedStyle;
-    const targetRatio = overrideRatio || aspectRatio;
-    const targetRes = overrideRes || resolution;
+    // Use passed params or fallback to state/refs
+    const targetStyle = overrideStyle || selectedStyleRef.current;
+    const targetRatio = overrideRatio || aspectRatioRef.current;
+    const targetRes = overrideRes || resolutionRef.current;
+    const currentTitle = titleRef.current;
+    const currentDesc = descriptionRef.current;
 
     setChatMessages(prev => [
       ...prev,
@@ -453,7 +470,7 @@ export default function App() {
 
       setLoadingText("AI 正在为您精心构思并生成电商大图...");
       const gImg = await generateEcommerceImage(
-        originalImage, 
+        currentImg, 
         targetStyle, 
         targetRatio, 
         targetRes,
@@ -463,7 +480,7 @@ export default function App() {
       setGeneratedImage(gImg);
 
       setLoadingText("正在为图片添加精美文案...");
-      const fImg = await addTextToImage(gImg, title, description, targetRatio);
+      const fImg = await addTextToImage(gImg, currentTitle, currentDesc, targetRatio);
       setFinalImage(fImg);
 
       if (userId && toolId) {
@@ -486,11 +503,11 @@ export default function App() {
 
       const newEntry: GenerationHistory = {
         id: Date.now().toString(),
-        originalImage,
+        originalImage: currentImg,
         generatedImage: gImg,
         finalImage: fImg,
-        title,
-        description,
+        title: currentTitle,
+        description: currentDesc,
         style: targetStyle,
         aspectRatio: targetRatio,
         resolution: targetRes,
@@ -579,6 +596,7 @@ export default function App() {
 
   const handleAgentSelectStyle = (style: string) => {
     setSelectedStyle(style);
+    selectedStyleRef.current = style;
     
     setChatMessages(prev => [
       ...prev,
@@ -607,6 +625,7 @@ export default function App() {
 
   const handleAgentSelectRatio = (ratio: AspectRatio, style: string) => {
     setAspectRatio(ratio);
+    aspectRatioRef.current = ratio;
 
     setChatMessages(prev => [
       ...prev,
@@ -635,6 +654,7 @@ export default function App() {
 
   const handleAgentSelectResolution = (res: Resolution, style: string, ratio: AspectRatio) => {
     setResolution(res);
+    resolutionRef.current = res;
 
     setChatMessages(prev => [
       ...prev,
@@ -812,10 +832,10 @@ export default function App() {
             suggestions: [
               {
                 id: "one-click-gen-from-chat",
-                label: originalImage ? "立即一键生成主图" : "请先上传/选择图片",
+                label: originalImageRef.current ? "立即一键生成主图" : "请先上传/选择图片",
                 variant: "orange",
                 action: () => {
-                  if (originalImage) {
+                  if (originalImageRef.current) {
                     triggerAgentGeneration();
                   } else {
                     agentFileInputRef.current?.click();
@@ -841,10 +861,10 @@ export default function App() {
             suggestions: [
               {
                 id: "continue-btn",
-                label: originalImage ? "立即一键生成" : "上传厨刀照片",
+                label: originalImageRef.current ? "立即一键生成" : "上传厨刀照片",
                 variant: "orange",
                 action: () => {
-                  if (originalImage) {
+                  if (originalImageRef.current) {
                     triggerAgentGeneration();
                   } else {
                     agentFileInputRef.current?.click();
