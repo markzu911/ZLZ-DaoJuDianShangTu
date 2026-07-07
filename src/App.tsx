@@ -373,6 +373,210 @@ export default function App() {
     ]);
   };
 
+  const triggerAgentGeneration = async (overrideStyle?: string, overrideRatio?: AspectRatio, overrideRes?: Resolution) => {
+    // Provide immediate feedback
+    setLoading(true);
+    setLoadingText("正在启动 AI 绘图引擎...");
+
+    if (!originalImage) {
+      setChatMessages(prev => [
+        ...prev,
+        {
+          id: "ai-err-" + Date.now(),
+          sender: "ai",
+          text: "检测到产品原图缺失，请先点击左下角按钮上传刀具照片后再试。",
+          timestamp: Date.now()
+        }
+      ]);
+      setLoading(false);
+      return;
+    }
+
+    // Use passed params or fallback to state
+    const targetStyle = overrideStyle || selectedStyle;
+    const targetRatio = overrideRatio || aspectRatio;
+    const targetRes = overrideRes || resolution;
+
+    setChatMessages(prev => [
+      ...prev,
+      {
+        id: "user-gen-" + Date.now(),
+        sender: "user",
+        text: "开始生成主图，请展现魔法！",
+        timestamp: Date.now()
+      }
+    ]);
+
+    const aiThinkingId = "ai-gen-think-" + Date.now();
+    setChatMessages(prev => [
+      ...prev,
+      {
+        id: aiThinkingId,
+        sender: "ai",
+        text: "正在一键制作您的 4K 电商主图，生成过程大约需要 15-25 秒...\n\n我们将进行：\n1. 验证您的账户积分权益\n2. 智能融合刀具材质与所选背景风格\n3. 生成顶尖光影氛围的广告级图片\n4. 将营销文案精美贴合至安全排版区域\n5. 上传至 SaaS OSS 桶并入库记录\n\n请不要关闭或刷新页面，见证大图的诞生...",
+        timestamp: Date.now(),
+        isGenerating: true
+      }
+    ]);
+
+    setLoadingText("正在检查积分状态...");
+
+    try {
+      if (userId && toolId) {
+        const verifyRes = await saasService.verify(userId, toolId);
+        if (!verifyRes.success) {
+          alert(verifyRes.message || "积分不足，无法生成");
+          setLoading(false);
+          setChatMessages(prev => {
+            const filtered = prev.filter(m => m.id !== aiThinkingId);
+            return [
+              ...filtered,
+              {
+                id: "ai-gen-err-" + Date.now(),
+                sender: "ai",
+                text: `积分校验失败： ${verifyRes.message || "积分不足，无法生成主图。请充值积分后再试！"}`,
+                timestamp: Date.now(),
+                suggestions: [
+                  {
+                    id: "retry-init",
+                    label: "重新开始",
+                    variant: "outline",
+                    action: () => { initChat(); }
+                  }
+                ]
+              }
+            ];
+          });
+          return;
+        }
+      }
+
+      setLoadingText("AI 正在为您精心构思并生成电商大图...");
+      const gImg = await generateEcommerceImage(
+        originalImage, 
+        targetStyle, 
+        targetRatio, 
+        targetRes,
+        initContext,
+        initPrompts
+      );
+      setGeneratedImage(gImg);
+
+      setLoadingText("正在为图片添加精美文案...");
+      const fImg = await addTextToImage(gImg, title, description, targetRatio);
+      setFinalImage(fImg);
+
+      if (userId && toolId) {
+        setLoadingText("正在完成积分扣费并保存图片...");
+        try {
+          const saveRes = await saasService.uploadImage(fImg, userId, toolId);
+          if (saveRes.currentIntegral !== undefined) {
+             setUserData(prev => prev ? { ...prev, integral: saveRes.currentIntegral } : null);
+          }
+          window.parent.postMessage({
+            type: 'SAAS_CONSUME_RESULT',
+            userId,
+            toolId,
+            success: true
+          }, '*');
+        } catch (error) {
+          console.error("Save result failed", error);
+        }
+      }
+
+      const newEntry: GenerationHistory = {
+        id: Date.now().toString(),
+        originalImage,
+        generatedImage: gImg,
+        finalImage: fImg,
+        title,
+        description,
+        style: targetStyle,
+        aspectRatio: targetRatio,
+        resolution: targetRes,
+        timestamp: Date.now(),
+      };
+      setHistory(prev => [newEntry, ...prev]);
+      setStep("RESULT");
+      setActiveMainTab("RESULT");
+
+      setChatMessages(prev => {
+        const filtered = prev.filter(m => m.id !== aiThinkingId);
+        return [
+          ...filtered,
+          {
+            id: "ai-gen-success-" + Date.now(),
+            sender: "ai",
+            text: `恭喜您，高精度商业主图已成功生成并保存。\n\n- 所选风格：${targetStyle}\n- 比例大小：${targetRatio}\n- 分辨率：${targetRes} (已完成4K细节超分)\n- 积分状态：已扣减并同步更新\n\n您可以通过下方预览卡片或操作按钮直接进行下载、预览，或去编辑器继续进行排版精修：`,
+            timestamp: Date.now(),
+            generatedResult: fImg,
+            suggestions: [
+              {
+                id: "download-result",
+                label: "立即下载 4K 大图",
+                variant: "orange",
+                action: () => {
+                  handleDownload(fImg);
+                }
+              },
+              {
+                id: "edit-result",
+                label: "导入编辑器精修",
+                variant: "outline",
+                action: () => {
+                  setActiveModule("EDITOR");
+                  setStep("EDITOR");
+                  setActiveMainTab("BG");
+                }
+              },
+              {
+                id: "restart-agent",
+                label: "再制作一张新的",
+                variant: "outline",
+                action: () => {
+                  reset();
+                  initChat();
+                }
+              }
+            ]
+          }
+        ];
+      });
+
+      setLoading(false);
+
+    } catch (err: any) {
+      console.error(err);
+      setLoading(false);
+      setChatMessages(prev => {
+        const filtered = prev.filter(m => m.id !== aiThinkingId);
+        return [
+          ...filtered,
+          {
+            id: "ai-gen-err-general-" + Date.now(),
+            sender: "ai",
+            text: `出图引擎出现了一点网络异常：\n\n${err?.message || "AI生成超时，可能是当前并发较高。"}\n\n您可以检查积分并重试。`,
+            timestamp: Date.now(),
+            suggestions: [
+              {
+                id: "retry-gen",
+                label: "重新尝试生成",
+                variant: "orange",
+                action: () => { triggerAgentGeneration(); }
+              },
+              {
+                id: "restart-all",
+                label: "返回起点",
+                variant: "outline",
+                action: () => { initChat(); }
+              }
+            ]
+          }
+        ];
+      });
+    }
+  };
+
   const handleAgentSelectStyle = (style: string) => {
     setSelectedStyle(style);
     
@@ -451,7 +655,7 @@ export default function App() {
             label: "一键生成图片",
             variant: "orange",
             action: () => {
-              triggerAgentGeneration();
+              triggerAgentGeneration(style, ratio, res);
             }
           },
           {
@@ -467,189 +671,6 @@ export default function App() {
     ]);
   };
 
-  const triggerAgentGeneration = async () => {
-    if (!originalImage) return;
-
-    setChatMessages(prev => [
-      ...prev,
-      {
-        id: "user-gen-" + Date.now(),
-        sender: "user",
-        text: "开始生成主图，请展现魔法！",
-        timestamp: Date.now()
-      }
-    ]);
-
-    const aiThinkingId = "ai-gen-think-" + Date.now();
-    setChatMessages(prev => [
-      ...prev,
-      {
-        id: aiThinkingId,
-        sender: "ai",
-        text: "正在一键制作您的 4K 电商主图，生成过程大约需要 15-25 秒...\n\n我们将进行：\n1. 验证您的账户积分权益\n2. 智能融合刀具材质与所选背景风格\n3. 生成顶尖光影氛围的广告级图片\n4. 将营销文案精美贴合至安全排版区域\n5. 上传至 SaaS OSS 桶并入库记录\n\n请不要关闭或刷新页面，见证大图的诞生...",
-        timestamp: Date.now(),
-        isGenerating: true
-      }
-    ]);
-
-    setLoading(true);
-    setLoadingText("正在检查积分状态...");
-
-    try {
-      if (userId && toolId) {
-        const verifyRes = await saasService.verify(userId, toolId);
-        if (!verifyRes.success) {
-          alert(verifyRes.message || "积分不足，无法生成");
-          setLoading(false);
-          setChatMessages(prev => {
-            const filtered = prev.filter(m => m.id !== aiThinkingId);
-            return [
-              ...filtered,
-              {
-                id: "ai-gen-err-" + Date.now(),
-                sender: "ai",
-                text: `积分校验失败： ${verifyRes.message || "积分不足，无法生成主图。请充值积分后再试！"}`,
-                timestamp: Date.now(),
-                suggestions: [
-                  {
-                    id: "retry-init",
-                    label: "重新开始",
-                    variant: "outline",
-                    action: () => { initChat(); }
-                  }
-                ]
-              }
-            ];
-          });
-          return;
-        }
-      }
-
-      setLoadingText("AI 正在为您精心构思并生成电商大图...");
-      const gImg = await generateEcommerceImage(
-        originalImage, 
-        selectedStyle, 
-        aspectRatio, 
-        resolution,
-        initContext,
-        initPrompts
-      );
-      setGeneratedImage(gImg);
-
-      setLoadingText("正在为图片添加精美文案...");
-      const fImg = await addTextToImage(gImg, title, description, aspectRatio);
-      setFinalImage(fImg);
-
-      if (userId && toolId) {
-        setLoadingText("正在完成积分扣费并保存图片...");
-        try {
-          const saveRes = await saasService.uploadImage(fImg, userId, toolId);
-          if (saveRes.currentIntegral !== undefined) {
-             setUserData(prev => prev ? { ...prev, integral: saveRes.currentIntegral } : null);
-          }
-          window.parent.postMessage({
-            type: 'SAAS_CONSUME_RESULT',
-            userId,
-            toolId,
-            success: true
-          }, '*');
-        } catch (error) {
-          console.error("Save result failed", error);
-        }
-      }
-
-      const newEntry: GenerationHistory = {
-        id: Date.now().toString(),
-        originalImage,
-        generatedImage: gImg,
-        finalImage: fImg,
-        title,
-        description,
-        style: selectedStyle,
-        aspectRatio,
-        resolution,
-        timestamp: Date.now(),
-      };
-      setHistory(prev => [newEntry, ...prev]);
-      setStep("RESULT");
-      setActiveMainTab("RESULT");
-
-      setChatMessages(prev => {
-        const filtered = prev.filter(m => m.id !== aiThinkingId);
-        return [
-          ...filtered,
-          {
-            id: "ai-gen-success-" + Date.now(),
-            sender: "ai",
-            text: `恭喜您，高精度商业主图已成功生成并保存。\n\n- 所选风格：${selectedStyle}\n- 比例大小：${aspectRatio}\n- 分辨率：${resolution} (已完成4K细节超分)\n- 积分状态：已扣减并同步更新\n\n您可以通过下方预览卡片或操作按钮直接进行下载、预览，或去编辑器继续进行排版精修：`,
-            timestamp: Date.now(),
-            generatedResult: fImg,
-            suggestions: [
-              {
-                id: "download-result",
-                label: "立即下载 4K 大图",
-                variant: "orange",
-                action: () => {
-                  handleDownload(fImg);
-                }
-              },
-              {
-                id: "edit-result",
-                label: "导入编辑器精修",
-                variant: "outline",
-                action: () => {
-                  setActiveModule("EDITOR");
-                  setStep("EDITOR");
-                  setActiveMainTab("BG");
-                }
-              },
-              {
-                id: "restart-agent",
-                label: "再制作一张新的",
-                variant: "outline",
-                action: () => {
-                  reset();
-                  initChat();
-                }
-              }
-            ]
-          }
-        ];
-      });
-
-      setLoading(false);
-
-    } catch (err: any) {
-      console.error(err);
-      setLoading(false);
-      setChatMessages(prev => {
-        const filtered = prev.filter(m => m.id !== aiThinkingId);
-        return [
-          ...filtered,
-          {
-            id: "ai-gen-err-general-" + Date.now(),
-            sender: "ai",
-            text: `出图引擎出现了一点网络异常：\n\n${err?.message || "AI生成超时，可能是当前并发较高。"}\n\n您可以检查积分并重试。`,
-            timestamp: Date.now(),
-            suggestions: [
-              {
-                id: "retry-gen",
-                label: "重新尝试生成",
-                variant: "orange",
-                action: () => { triggerAgentGeneration(); }
-              },
-              {
-                id: "restart-all",
-                label: "返回起点",
-                variant: "outline",
-                action: () => { initChat(); }
-              }
-            ]
-          }
-        ];
-      });
-    }
-  };
 
   const handleSendCustomMessage = async () => {
     if (!chatInput.trim()) return;
